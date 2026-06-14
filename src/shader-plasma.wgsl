@@ -1,7 +1,9 @@
 // Plasma shader - Aurora borealis inspired, OLED optimized
 
 struct Uniforms {
+    resolution: vec2<f32>,
     time: f32,
+    _padding: f32,
 }
 
 @group(0) @binding(0)

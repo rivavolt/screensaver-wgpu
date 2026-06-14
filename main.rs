@@ -1,35 +1,8 @@
 use pollster::FutureExt;
-use std::fs;
 use std::io::Write;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::util::DeviceExt;
-
-const DEFAULT_SHADER: &str = include_str!("shader.wgsl");
-
-fn load_shader(name: &str) -> String {
-    // Try to find shader file relative to executable or in common locations
-    let candidates = [
-        format!("src/shader-{}.wgsl", name),
-        format!("src/{}.wgsl", name),
-        format!("shader-{}.wgsl", name),
-        format!("{}.wgsl", name),
-    ];
-
-    for path in &candidates {
-        if Path::new(path).exists() {
-            if let Ok(content) = fs::read_to_string(path) {
-                eprintln!("Loaded shader: {}", path);
-                return content;
-            }
-        }
-    }
-
-    // Fall back to default embedded shader
-    eprintln!("Shader '{}' not found, using default", name);
-    DEFAULT_SHADER.to_string()
-}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -54,7 +27,7 @@ struct HeadlessState {
 }
 
 impl HeadlessState {
-    fn new(width: u32, height: u32, shader_source: &str) -> Self {
+    fn new(width: u32, height: u32) -> Self {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -107,7 +80,7 @@ impl HeadlessState {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
         let uniforms = Uniforms {
@@ -322,7 +295,7 @@ mod windowed {
     }
 
     impl State {
-        pub fn new(window: Arc<Window>, shader_source: &str) -> Self {
+        pub fn new(window: Arc<Window>) -> Self {
             let size = window.inner_size();
 
             let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -368,7 +341,7 @@ mod windowed {
 
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Shader"),
-                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
             });
 
             let uniforms = Uniforms {
@@ -528,7 +501,6 @@ mod windowed {
 
     pub struct App {
         pub state: Option<State>,
-        pub shader_source: String,
     }
 
     impl ApplicationHandler for App {
@@ -544,7 +516,7 @@ mod windowed {
             let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
             window.set_cursor_visible(false);
 
-            self.state = Some(State::new(window, &self.shader_source));
+            self.state = Some(State::new(window));
         }
 
         fn window_event(
@@ -591,22 +563,22 @@ mod windowed {
         }
     }
 
-    pub fn run(shader_source: String) {
+    pub fn run() {
         let event_loop = EventLoop::new().unwrap();
         event_loop.set_control_flow(ControlFlow::Poll);
 
-        let mut app = App { state: None, shader_source };
+        let mut app = App { state: None };
         event_loop.run_app(&mut app).unwrap();
     }
 }
 
-fn run_headless(width: u32, height: u32, fps: u32, shader_source: &str) {
+fn run_headless(width: u32, height: u32, fps: u32) {
     eprintln!(
         "Headless mode: {}x{} @ {} fps, outputting raw RGBA to stdout",
         width, height, fps
     );
 
-    let mut state = HeadlessState::new(width, height, shader_source);
+    let mut state = HeadlessState::new(width, height);
     let frame_duration = std::time::Duration::from_secs_f64(1.0 / fps as f64);
     let mut stdout = std::io::stdout().lock();
 
@@ -629,7 +601,6 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     let headless = args.iter().any(|a| a == "--headless");
-    let list_shaders = args.iter().any(|a| a == "--list");
     let width = args
         .iter()
         .position(|a| a == "--width")
@@ -648,35 +619,10 @@ fn main() {
         .and_then(|i| args.get(i + 1))
         .and_then(|s| s.parse().ok())
         .unwrap_or(60);
-    let shader_name = args
-        .iter()
-        .position(|a| a == "--shader")
-        .and_then(|i| args.get(i + 1))
-        .map(|s| s.as_str())
-        .unwrap_or("shader");
-
-    if list_shaders {
-        eprintln!("Available shaders:");
-        eprintln!("  shader   - Default plasma shader");
-        eprintln!("  genesis  - Cosmic jellyfish, impossible geometry, central eye");
-        eprintln!("  ocean    - Bioluminescent deep-sea with jellyfish & particles");
-        eprintln!("  anima    - Neural lightning, sacred geometry, aurora ribbons");
-        eprintln!("  zen      - Living meditation with fireflies, enso circle, moon");
-        eprintln!("  night    - Night sky / starfield");
-        eprintln!("  fractal  - Deep zoom infinite fractals with color cycling");
-        eprintln!("  electric - Neon grids, plasma arcs, synthwave vibes");
-        eprintln!("  liquid   - Iridescent fluid dynamics, oil on water");
-        eprintln!("  mandala  - Sacred geometry, kaleidoscopic symmetry");
-        eprintln!("  prism    - Rainbow light dispersion, crystalline refractions");
-        eprintln!("\nUsage: screensaver --shader ocean [--headless] [--width 2560] [--height 1440] [--fps 60]");
-        return;
-    }
-
-    let shader_source = load_shader(shader_name);
 
     if headless {
-        run_headless(width, height, fps, &shader_source);
+        run_headless(width, height, fps);
     } else {
-        windowed::run(shader_source);
+        windowed::run();
     }
 }
